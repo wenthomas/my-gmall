@@ -14,7 +14,6 @@ import org.apache.spark.streaming.kafka.KafkaUtils
 object MyKafkaUtil {
 
     private val params: Map[String, String] = Map[String, String](
-        //todo
         ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG -> PropertiesUtil.getProperty("kafka.broker.list"),
         ConsumerConfig.GROUP_ID_CONFIG -> PropertiesUtil.getProperty("kafka.group")
     )
