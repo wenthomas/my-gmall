@@ -22,4 +22,9 @@ public interface PublisherService {
      * @return
      */
     Map<String, Long> getHourDau(String date);
+
+    Double getTotalAmount(String date);
+
+    //Map("10"->11.11, "11"->20.33, "12"->30.55)
+    Map<String, Double> getHourOrderAmount(String date);
 }

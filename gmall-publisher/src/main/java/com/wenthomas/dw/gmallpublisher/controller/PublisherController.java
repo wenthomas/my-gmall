@@ -48,6 +48,13 @@ public class PublisherController {
         map2.put("value", "233");
         resultList.add(map2);
 
+        Map<String, String> map3 = new HashMap<>();
+        map3.put("id", "order_amount");
+        map3.put("name", "新增交易额");
+        Double amount = publisherService.getTotalAmount(date);
+        map3.put("value", amount.toString());
+        resultList.add(map3);
+
         return JSON.toJSONString(resultList);
     }
 
@@ -68,6 +75,15 @@ public class PublisherController {
             Map<String, Long> yesterday = publisherService.getHourDau(getYesterday(date));
 
             Map<String, Map<String, Long>> resultMap = new HashMap<>();
+            resultMap.put("today", today);
+            resultMap.put("yesterday", yesterday);
+
+            return JSON.toJSONString(resultMap);
+        } else if ("order_amount".equals(id)) {
+            Map<String, Double> today = publisherService.getHourOrderAmount(date);
+            Map<String, Double> yesterday = publisherService.getHourOrderAmount(getYesterday(date));
+
+            Map<String, Map<String, Double>> resultMap = new HashMap<>();
             resultMap.put("today", today);
             resultMap.put("yesterday", yesterday);
 
