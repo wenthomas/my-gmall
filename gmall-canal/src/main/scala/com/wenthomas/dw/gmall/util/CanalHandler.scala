@@ -42,14 +42,14 @@ object CanalHandler {
                 println("rowchange----" + key + ":" + value)
             }
             //4，将每行数据变化写到Kafka
-            //todo:模拟延迟
+/*            //模拟延迟
             new Thread() {
                 override def run(): Unit = {
                     Thread.sleep(new Random().nextInt(10 * 1000))
                     MyKafkaUtil.send(topic, result.toJSONString)
                 }
-            }.start()
-            //MyKafkaUtil.send(topic, result.toJSONString)
+            }.start()*/
+            MyKafkaUtil.send(topic, result.toJSONString)
         }
     }
 }

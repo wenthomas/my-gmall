@@ -1,5 +1,7 @@
 package com.wenthomas.gmall.realtime.app
 
+import java.util
+
 import com.alibaba.fastjson.JSON
 import com.wenthomas.gmall.common.Constant
 import com.wenthomas.gmall.realtime.bean.{OrderDetail, OrderInfo, SaleDetail}
@@ -18,6 +20,13 @@ import redis.clients.jedis.Jedis
  */
 object SaleDetailApp {
 
+    /**
+     * 写入redis(string数据类型方案)
+     * @param client
+     * @param key
+     * @param value
+     * @return
+     */
     def saveToRedis(client: Jedis, key: String, value: AnyRef) = {
         //样例类不能用fastJson来解析，使用Serialization.write
         import org.json4s.DefaultFormats
@@ -31,8 +40,40 @@ object SaleDetailApp {
     }
 
     def cacheOrderDetail(client: Jedis, orderDetail: OrderDetail) = {
-        val key = s"order_info:${orderDetail.order_id}:${orderDetail.id}"
+        val key = s"order_detail:${orderDetail.order_id}:${orderDetail.id}"
         saveToRedis(client, key, orderDetail)
+    }
+
+    /**
+     * 写入redis（Hash数据类型方案）
+     * 优点： key数量固定为order_info和order_detail两个
+     * 缺点：存取相较于string数据类型会麻烦一点
+     * @param client
+     * @param key       redis key
+     * @param field     hash的key
+     * @param value     hash的value
+     * @return
+     */
+    def saveToRedisHash(client: Jedis, key: String, field: String, value: AnyRef) = {
+        //样例类不能用fastJson来解析，使用Serialization.write
+        import org.json4s.DefaultFormats
+        val jsonString = Serialization.write(value)(DefaultFormats)
+        val map: util.Map[String, String]  = new util.HashMap[String, String]()
+        map.put(field, jsonString)
+        //hash存储的是java map
+        client.hmset(key, map)
+    }
+
+    def cacheOrderInfoHash(client: Jedis, orderInfo: OrderInfo)= {
+        val key = "order_info"
+        val field = orderInfo.id
+        saveToRedisHash(client, key, field, orderInfo)
+    }
+
+    def cacheOrderDetailHash(client: Jedis, orderDetail: OrderDetail) = {
+        val key = "order_detail"
+        val field = s"${orderDetail.order_id}:${orderDetail.id}"
+        saveToRedisHash(client, key, field, orderDetail)
     }
 
     /**
@@ -55,14 +96,25 @@ object SaleDetailApp {
                             println("Some", "Some")
                             //order_info 和 order_detail 都有
                             //（1）写入到redis缓冲区
-                            cacheOrderInfo(client, orderInfo)
+//                            cacheOrderInfo(client, orderInfo)
+                            cacheOrderInfoHash(client, orderInfo)
+
                             //（2）把orderInfo和orderDetail封装在一个样例类SaleDetail中
                             val first = SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(orderDetail)
+
                             //（3）先从缓冲区读取其余可能之前遗留的orderDetail信息
-                            val keys = client.keys(s"order_detail:${orderId}:*").toList
+/*                            val keys = client.keys(s"order_detail:${orderId}:*").toList
                             //读取到的orderDetail可能会有多个
                             first::keys.map(key => {
                                 val orderDetailString = client.get(key)
+                                SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(JSON.parseObject(orderDetailString, classOf[OrderDetail]))
+                            })*/
+
+                            val fields = client.hkeys("order_detail").toList
+                            //获取到orderId对应的所有orderDetail的id值
+                            val orderDetails = fields.filter(_.split(":")(0) == orderId)
+                            first::orderDetails.map(field => {
+                                val orderDetailString = client.hget("order_detail", field)
                                 SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(JSON.parseObject(orderDetailString, classOf[OrderDetail]))
                             })
 
@@ -71,7 +123,8 @@ object SaleDetailApp {
                             println("None", "Some")
                             //order_info 没有， order_detail 有
                             //(1)根据order_detail中的orderId向缓存中读取对应的orderInfo信息
-                            val orderInfoString = client.get("order_info:" + orderId)
+//                            val orderInfoString = client.get("order_info:" + orderId)
+                            val orderInfoString = client.hget("order_info", orderId)
 
                             //(2)读取之后，可能读到order_info也可能读不到
                             if (StringUtils.isNotBlank(orderInfoString)) {
@@ -79,7 +132,8 @@ object SaleDetailApp {
                                 SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(orderDetail)::Nil
                             } else {
                                 //读不到则将order_detail写入缓存中
-                                cacheOrderDetail(client, orderDetail)
+//                                cacheOrderDetail(client, orderDetail)
+                                cacheOrderDetailHash(client, orderDetail)
                                 Nil
                             }
 
@@ -87,14 +141,22 @@ object SaleDetailApp {
                             println("Some", "None")
                             //order_info有， order_detail 没有
                             //(3)orderInfo要写入缓存（考虑到对应的orderDetail有多个，可能还在延迟中）
-                            cacheOrderInfo(client, orderInfo)
+//                            cacheOrderInfo(client, orderInfo)
+                            cacheOrderInfoHash(client, orderInfo)
+                            
                             //(1)根据orderId在缓存中读取对应的orderDetail信息
-                            //todo:改造为hash结构存储
-
-                            val keys = client.keys(s"order_detail:${orderId}:*").toList
+/*                            val keys = client.keys(s"order_detail:${orderId}:*").toList
                             //(2)读取到的orderDetail可能会有多个
                             keys.map(key => {
                                 val orderDetailString = client.get(key)
+                                SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(JSON.parseObject(orderDetailString, classOf[OrderDetail]))
+                            })*/
+
+                            val fields = client.hkeys("order_detail").toList
+                            //获取到orderId对应的所有orderDetail的id值
+                            val orderDetails = fields.filter(_.split(":")(0) == orderId)
+                            orderDetails.map(field => {
+                                val orderDetailString = client.hget("order_detail", field)
                                 SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(JSON.parseObject(orderDetailString, classOf[OrderDetail]))
                             })
                     })
