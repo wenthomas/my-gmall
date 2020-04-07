@@ -143,7 +143,7 @@ object SaleDetailApp {
                             //(3)orderInfo要写入缓存（考虑到对应的orderDetail有多个，可能还在延迟中）
 //                            cacheOrderInfo(client, orderInfo)
                             cacheOrderInfoHash(client, orderInfo)
-                            
+
                             //(1)根据orderId在缓存中读取对应的orderDetail信息
 /*                            val keys = client.keys(s"order_detail:${orderId}:*").toList
                             //(2)读取到的orderDetail可能会有多个
