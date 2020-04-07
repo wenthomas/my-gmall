@@ -58,16 +58,19 @@ object ESUtil {
                 .defaultIndex(indx)
                 .defaultType(tp)
 
-        //循环插入数据
-        sources.foreach(source => {
-            val action = new Index.Builder(source).build()
-            bulk.addAction(action)
+        //循环插入数据：有id则插id，无id则自动生成
+        sources.foreach({
+            case (id:String, data) =>
+                val action = new Index.Builder(data).id(id).build()
+                bulk.addAction(action)
+            case data =>
+                val action = new Index.Builder(data).build()
+                bulk.addAction(action)
         })
 
         //bulk封装完成并执行
         client.execute(bulk.build())
         client.shutdownClient()
-
     }
 
     /**
@@ -75,7 +78,7 @@ object ESUtil {
      * @param args
      */
     def main(args: Array[String]): Unit = {
-        val list = User(20, "wenwen")::User(30, "Verno")::User(25, "Leo")::Nil
+        val list = ("1001", User(20, "wenwen"))::("1002", User(30, "Verno"))::("1003", User(25, "Leo"))::Nil
         //todo
         insertBulk("user_info", list.toIterator)
 

@@ -3,7 +3,7 @@ package com.wenthomas.gmall.realtime.app
 import java.util
 
 import com.alibaba.fastjson.JSON
-import com.wenthomas.gmall.common.Constant
+import com.wenthomas.gmall.common.{Constant, ESUtil}
 import com.wenthomas.gmall.realtime.bean.{AlertInfo, EventLog}
 import com.wenthomas.gmall.realtime.util.MyKafkaUtil
 import org.apache.spark.SparkConf
@@ -94,6 +94,20 @@ object AlertApp {
 
         })
         alertInfoStream.print(1000)
+        //4，把预警信息写入到es
+        alertInfoStream
+                        .filter(_._1)   //先把需要写入到es的预警信息过滤出来
+                        .map(_._2)      //只保留预警信息
+                        .foreachRDD(rdd => {
+                            rdd.foreachPartition(alertInfos => {
+                                //连接到es
+                                //写数据
+                                //关闭到es的连接
+                                //同一设备，每分钟只记录一条预警，只写入一条记录到es
+                                val data = alertInfos.map(info => (info.mid + ":" + info.ts / 1000 / 60, info))
+                                ESUtil.insertBulk(Constant.INDEX_ALERT, data)
+                            })
+                        })
 
 
         ssc.start()

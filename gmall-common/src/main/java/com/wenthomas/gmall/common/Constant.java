@@ -15,4 +15,8 @@ public class Constant {
 
 
     public final static String TOPIC_ORDER_INFO = "topic_order_info";
+    public final static String TOPIC_ORDER_DETAIL = "topic_order_detail";
+
+    // 实时预警的es index
+    public final static String INDEX_ALERT = "gmall_coupon_alert";
 }
