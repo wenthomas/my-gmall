@@ -1,24 +1,25 @@
 package com.wenthomas.gmall.realtime.app
 
 import java.util
+import java.util.Properties
 
 import com.alibaba.fastjson.JSON
-import com.wenthomas.gmall.common.Constant
-import com.wenthomas.gmall.realtime.bean.{OrderDetail, OrderInfo, SaleDetail}
+import com.wenthomas.gmall.common.{Constant, ESUtil}
+import com.wenthomas.gmall.realtime.bean.{OrderDetail, OrderInfo, SaleDetail, UserInfo}
 import com.wenthomas.gmall.realtime.util.{MyKafkaUtil, RedisUtil}
 import org.apache.commons.lang3.StringUtils
 import org.apache.spark.SparkConf
-import org.apache.spark.streaming.dstream.DStream
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.apache.spark.streaming.dstream.DStream
 import org.json4s.jackson.Serialization
 import redis.clients.jedis.Jedis
 
-
 /**
  * @author Verno
- * @create 2020-04-07 14:34 
+ * @create 2020-04-08 9:18 
  */
-object SaleDetailApp {
+object SaleDetailApp1 {
 
     /**
      * 写入redis(string数据类型方案)
@@ -93,41 +94,46 @@ object SaleDetailApp {
                     import scala.collection.JavaConversions._
                     //如果返回一个，则放入到集合中，如果返回为空，则返回一个空集合
                     val result = it.flatMap({
-                        case (orderId, (Some(orderInfo: OrderInfo), Some(orderDetail: OrderDetail))) =>
-                            println("Some", "Some")
-                            //order_info 和 order_detail 都有
+                        case (orderId, (Some(orderInfo: OrderInfo), opt)) =>
+                            println("Some", "Option")
+                            //情景一：order_info 有， order_detail 有或没有
                             //（1）写入到redis缓冲区
                             cacheOrderInfo(client, orderInfo)
-//                            cacheOrderInfoHash(client, orderInfo)
-
-                            //（2）把orderInfo和orderDetail封装在一个样例类SaleDetail中
-                            val first = SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(orderDetail)
+                            //                            cacheOrderInfoHash(client, orderInfo)
 
                             //（3）先从缓冲区读取其余可能之前遗留的orderDetail信息
                             val keys = client.keys(s"order_detail:${orderId}:*").toList
                             //读取到的orderDetail可能会有多个
-                            first::keys.map(key => {
+                            keys.map(key => {
                                 val orderDetailString = client.get(key)
                                 //读完缓存后删除order_detail端的缓存
                                 client.del(key)
-                                SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(JSON.parseObject(orderDetailString, classOf[OrderDetail]))
+                                SaleDetail()
+                                        .mergeOrderInfo(orderInfo)
+                                        .mergeOrderDetail(JSON.parseObject(orderDetailString, classOf[OrderDetail]))
+                            }) ::: (opt match {
+                                case Some(orderDetail) =>
+                                    SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(orderDetail)::Nil
+                                case None =>
+                                    Nil
                             })
 
-/*                            val fields = client.hkeys("order_detail").toList
-                            //获取到orderId对应的所有orderDetail的id值
-                            val orderDetails = fields.filter(_.split(":")(0) == orderId)
-                            first::orderDetails.map(field => {
-                                val orderDetailString = client.hget("order_detail", field)
-                                SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(JSON.parseObject(orderDetailString, classOf[OrderDetail]))
-                            })*/
+
+                        /*                            val fields = client.hkeys("order_detail").toList
+                                                    //获取到orderId对应的所有orderDetail的id值
+                                                    val orderDetails = fields.filter(_.split(":")(0) == orderId)
+                                                    first::orderDetails.map(field => {
+                                                        val orderDetailString = client.hget("order_detail", field)
+                                                        SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(JSON.parseObject(orderDetailString, classOf[OrderDetail]))
+                                                    })*/
 
 
                         case (orderId, (None, Some(orderDetail: OrderDetail))) =>
                             println("None", "Some")
-                            //order_info 没有， order_detail 有
+                            //情景二：order_info 没有， order_detail 有
                             //(1)根据order_detail中的orderId向缓存中读取对应的orderInfo信息
                             val orderInfoString = client.get("order_info:" + orderId)
-//                            val orderInfoString = client.hget("order_info", orderId)
+                            //                            val orderInfoString = client.hget("order_info", orderId)
 
                             //(2)读取之后，可能读到order_info也可能读不到
                             if (StringUtils.isNotBlank(orderInfoString)) {
@@ -136,40 +142,54 @@ object SaleDetailApp {
                             } else {
                                 //读不到则将order_detail写入缓存中
                                 cacheOrderDetail(client, orderDetail)
-//                                cacheOrderDetailHash(client, orderDetail)
+                                //                                cacheOrderDetailHash(client, orderDetail)
                                 Nil
                             }
-
-                        case (orderId, (Some(orderInfo: OrderInfo), None)) =>
-                            println("Some", "None")
-                            //order_info有， order_detail 没有
-                            //(3)orderInfo要写入缓存（考虑到对应的orderDetail有多个，可能还在延迟中）
-                            cacheOrderInfo(client, orderInfo)
-//                            cacheOrderInfoHash(client, orderInfo)
-
-                            //(1)根据orderId在缓存中读取对应的orderDetail信息
-                            val keys = client.keys(s"order_detail:${orderId}:*").toList
-                            //(2)读取到的orderDetail可能会有多个
-                            keys.map(key => {
-                                val orderDetailString = client.get(key)
-                                //读完缓存后删除order_detail端的缓存
-                                client.del(key)
-                                SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(JSON.parseObject(orderDetailString, classOf[OrderDetail]))
-                            })
-
-/*                            val fields = client.hkeys("order_detail").toList
-                            //获取到orderId对应的所有orderDetail的id值
-                            val orderDetails = fields.filter(_.split(":")(0) == orderId)
-                            orderDetails.map(field => {
-                                val orderDetailString = client.hget("order_detail", field)
-                                SaleDetail().mergeOrderInfo(orderInfo).mergeOrderDetail(JSON.parseObject(orderDetailString, classOf[OrderDetail]))
-                            })*/
                     })
 
                     client.close()
                     result
                 })
         stream
+    }
+
+    /**
+     * 反查mysql中的user_info信息，将所需信息封装入saleDetailStream中
+     * @param ssc
+     * @param saleDetailStream
+     */
+    def joinUser(ssc: StreamingContext, saleDetailStream: DStream[SaleDetail]) = {
+        //jdbc连接属性
+        val url = "jdbc:mysql://mydata03:3306/gmall"
+        val user = "root"
+        val passwd = "123456"
+        val props = new Properties()
+        props.setProperty("user", user)
+        props.setProperty("password", passwd)
+
+        val spark = SparkSession.builder()
+                .config(ssc.sparkContext.getConf)
+                .getOrCreate()
+        import spark.implicits._
+
+        //1，先把mysql数据读取出来，每个3s读一次（为了能读到新添加的user）
+        saleDetailStream.transform(saleDetailRDD => {
+            //方案一：直接在driver中去把数据读取出来
+            val userInfoRDD = spark.read.jdbc(url, Constant.TABLE_USER_INFO, props)
+                            .as[UserInfo]
+                            .rdd
+                            .map(user => (user.id, user))
+
+            //两个RDD进行join操作
+            saleDetailRDD.map(saleDetail => (saleDetail.user_id, saleDetail))
+                            .join(userInfoRDD)
+                            .map({
+                                case (userId, (saleDetail, userInfo)) =>
+                                    saleDetail.mergeUserInfo(userInfo)
+                            })
+
+            //方案二：或者每个分区分别进行join，参考map join的代码
+        })
     }
 
     def main(args: Array[String]): Unit = {
@@ -192,17 +212,31 @@ object SaleDetailApp {
                 })
 
         //2，对两个流进行封装，使用full join保证两边数据都不丢
-        val saleDetailStream = fullJoin(orderInfoStream, orderDetailStream)
-        saleDetailStream.print(1000)
         //3，对两个流进行join合并
+        var saleDetailStream = fullJoin(orderInfoStream, orderDetailStream)
 
         //4，根据用户的id反查mysql中的user_info表，得到用户的生日和性别等信息
+        saleDetailStream = joinUser(ssc, saleDetailStream)
+        saleDetailStream.print(1000)
 
         //5，把销售详情写入到es
+        saleDetailStream.foreachRDD(rdd => {
+            //方案一：可以把rdd的所有数据拉到driver，一次性写入
+            //优点：一次写入
+            //缺点：数据量大时会OOM
+            ESUtil.insertBulk(Constant.INDEX_SALE_DETAIL, rdd.collect.toIterator)
+
+            //方案二：每个分区分别写入到ES
+/*            rdd.foreachPartition(it => {
+                ESUtil.insertBulk(Constant.INDEX_SALE_DETAIL, it)
+            })*/
+        })
+
+
 
         //测试
-/*        orderInfoStream.print(100)
-        orderDetailStream.print(100)*/
+        /*        orderInfoStream.print(100)
+                orderDetailStream.print(100)*/
 
         ssc.start()
         ssc.awaitTermination()

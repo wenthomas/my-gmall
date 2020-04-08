@@ -1,5 +1,6 @@
 package com.wenthomas.dw.gmallpublisher.service;
 
+import java.io.IOException;
 import java.util.Map;
 
 /**
@@ -27,4 +28,20 @@ public interface PublisherService {
 
     //Map("10"->11.11, "11"->20.33, "12"->30.55)
     Map<String, Double> getHourOrderAmount(String date);
+
+    /**
+     * 销售明细的读取
+     * @param date
+     * @param keyWord
+     * @param startPage
+     * @param sizePerPage
+     * @param aggField
+     * @param aggCount
+     */
+    public Map<String, Object> getSaleDetailAndAggGroupByFields(String date,
+                                                                String keyWord,
+                                                                int startPage,
+                                                                int sizePerPage,
+                                                                String aggField,
+                                                                int aggCount) throws IOException;
 }

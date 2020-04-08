@@ -1,6 +1,6 @@
 package com.wenthomas.gmall.common
 
-import io.searchbox.client.JestClientFactory
+import io.searchbox.client.{JestClient, JestClientFactory}
 import io.searchbox.client.config.HttpClientConfig
 import io.searchbox.core.{Bulk, Index}
 
@@ -25,6 +25,12 @@ object ESUtil {
             .multiThreaded(true)
             .build()
     factory.setHttpClientConfig(conf)
+
+
+
+    def getClient(): JestClient = {
+        factory.getObject
+    }
 
 
     /**
@@ -79,7 +85,6 @@ object ESUtil {
      */
     def main(args: Array[String]): Unit = {
         val list = ("1001", User(20, "wenwen"))::("1002", User(30, "Verno"))::("1003", User(25, "Leo"))::Nil
-        //todo
         insertBulk("user_info", list.toIterator)
 
     }
